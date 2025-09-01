@@ -4,6 +4,8 @@ A Pidgin protocol to integrate with Mistral AI.
 
 This is just a toy, not production ready, I'm not responsible for any errors.
 
+You can generate API keys on https://console.mistral.ai/api-keys
+
 ## Prerequisites
 
 On Debian/Ubuntu, install the following packages:
