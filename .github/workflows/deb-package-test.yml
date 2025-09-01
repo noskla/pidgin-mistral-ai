@@ -1,0 +1,33 @@
+---
+name: Deb Package Test
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build-deb:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Make package-deb.sh executable
+        run: chmod +x package-deb.sh
+
+      - name: Run package-deb.sh
+        run: ./package-deb.sh
+
+      - name: Verify deb package exists
+        run: |
+          if [ -f "pidgin-mistral-ai_1.0.0_amd64.deb" ]; then
+            echo "Deb package created successfully"
+          else
+            echo "Deb package creation failed"
+            exit 1
+          fi
