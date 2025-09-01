@@ -9,7 +9,7 @@ This is just a toy, not production ready, I'm not responsible for any errors.
 On Debian/Ubuntu, install the following packages:
 
 ```bash
-sudo apt-get install libpurple-dev libjson-glib-dev libcurl4-openssl-dev
+sudo apt-get install autoconf automake libtool libtool-bin pkg-config libpurple-dev libjson-glib-dev libcurl4-openssl-dev
 ```
 
 ## Installation
