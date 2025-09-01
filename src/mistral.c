@@ -434,8 +434,8 @@ static PurplePluginInfo info = {
     .summary = "Mistral AI Protocol Plugin for Pidgin",
     .description = "Chat with Mistral AI through Pidgin. Configure your API key in the account settings.",
 
-    .author = "Your Name <your.email@domain.com>",
-    .homepage = "https://github.com/yourusername/pidgin-mistral",
+    .author = "Yaro <yaroslav.cichocki@proton.me>",
+    .homepage = "https://github.com/noskla/pidgin-mistral-ai",
 
     .load = NULL,
     .unload = NULL,
@@ -463,7 +463,6 @@ static void init_plugin(PurplePlugin *plugin) {
     option = purple_account_option_string_new("API Key", "api_key", "");
     prpl_info.protocol_options = g_list_append(prpl_info.protocol_options, option);
 
-    // Add model selection dropdown
     GList *model_list = NULL;
     PurpleKeyValuePair *kv;
 
@@ -490,13 +489,11 @@ static void init_plugin(PurplePlugin *plugin) {
         "model",
         model_list);
 
-    // Add system message option
     PurpleAccountOption *system_msg_option = purple_account_option_string_new(
         "System Message",
         "system_message",
-        "User's Pidgin username: {username}, status: {status}, status message: {status_message}");
+        "You are talking using instant messaging service with a user named \"{username}\" that has profile status \"{status}\" with a message \"{status_message}\". Keep answers concise and to the point.");
 
-    // Add to protocol options
     prpl_info.protocol_options = g_list_append(prpl_info.protocol_options, model_option);
     prpl_info.protocol_options = g_list_append(prpl_info.protocol_options, system_msg_option);
 
