@@ -16,11 +16,6 @@ struct MistralResponse {
     size_t size;
 };
 
-typedef struct _MistralHistoryEntry {
-    char *role;
-    char *content;
-} MistralHistoryEntry;
-
 typedef struct _MistralAsyncData {
     PurpleConversation *conv;
     char *message;
@@ -28,7 +23,6 @@ typedef struct _MistralAsyncData {
     CURL *curl;
     struct curl_slist *headers;
     struct MistralResponse response;
-    GList *history;
 } MistralAsyncData;
 
 static void mistral_login(PurpleAccount *account);
@@ -41,10 +35,6 @@ static GList *mistral_status_types(PurpleAccount *account);
 static const char *mistral_list_icon(PurpleAccount *account, PurpleBuddy *buddy);
 static gboolean mistral_async_send(gpointer user_data);
 static void send_to_mistral_api_async(MistralAsyncData *data);
-static void add_history_entry(GList **history, const char *role, const char *content);
-static void free_history(GList *history);
-static GList *get_conversation_history(PurpleConversation *conv);
-static void save_conversation_history(PurpleConversation *conv, GList *history);
 
 
 static void mistral_login(PurpleAccount *account) {
@@ -113,22 +103,7 @@ static gboolean mistral_async_send(gpointer user_data) {
     const char *status_id = purple_status_get_id(active_status);
     const char *status_message = purple_status_get_attr_string(active_status, "message");
 
-    data->history = NULL;
-
-    GList *existing_history = get_conversation_history(data->conv);
-    if (existing_history) {
-        GList *item = existing_history;
-        while (item) {
-            MistralHistoryEntry *entry = (MistralHistoryEntry *)item->data;
-            if (entry && entry->role && entry->content) {
-                add_history_entry(&data->history, entry->role, entry->content);
-            }
-            item = item->next;
-        }
-    }
-
-    add_history_entry(&data->history, "user", data->message);
-    char *json_payload = create_mistral_json_payload(data->message, username, status_id, status_message, data->history);
+    char *json_payload = create_mistral_json_payload(data->message, username, status_id, status_message, NULL);
 
     curl_easy_setopt(data->curl, CURLOPT_URL, "https://api.mistral.ai/v1/chat/completions");
     curl_easy_setopt(data->curl, CURLOPT_POSTFIELDS, json_payload);
@@ -226,10 +201,6 @@ static void send_to_mistral_api_async(MistralAsyncData *data) {
                             g_free(result);
                         }
 
-                        if (data->conv && result) {
-                            add_history_entry(&data->history, "assistant", result);
-                            save_conversation_history(data->conv, data->history);
-                        }
                     } else {
                         result = g_strdup("Error: No content in Mistral response.");
                         if (data->conv && result) {
@@ -300,21 +271,6 @@ static char *create_mistral_json_payload(const char *message, const char *userna
     json_builder_end_object(builder);
     g_free(system_content);
 
-    if (history) {
-        GList *item = history;
-        while (item) {
-            MistralHistoryEntry *entry = (MistralHistoryEntry *)item->data;
-            if (entry && entry->role && entry->content) {
-                json_builder_begin_object(builder);
-                json_builder_set_member_name(builder, "role");
-                json_builder_add_string_value(builder, entry->role);
-                json_builder_set_member_name(builder, "content");
-                json_builder_add_string_value(builder, entry->content);
-                json_builder_end_object(builder);
-            }
-            item = item->next;
-        }
-    }
 
     json_builder_begin_object(builder);
     json_builder_set_member_name(builder, "role");
@@ -376,89 +332,6 @@ static size_t write_callback(void *contents, size_t size, size_t nmemb, void *us
     return realsize;
 }
 
-static void add_history_entry(GList **history, const char *role, const char *content) {
-    if (!history || !role || !content) {
-        return;
-    }
-
-    char *cleaned_content = g_malloc0(strlen(content) + 1);
-    const char *src = content;
-    char *dest = cleaned_content;
-
-    size_t content_len = strlen(content);
-    if (content_len == 0) {
-        g_free(cleaned_content);
-        return;
-    }
-
-    while (*src && content_len > 0) {
-        if ((*src >= 32 && *src <= 126) || *src == '\n' || *src == '\t' || *src == '\r') {
-            *dest++ = *src;
-        }
-        src++;
-        content_len--;
-    }
-    *dest = '\0';
-
-    if (g_strcmp0(role, "user") != 0 &&
-        g_strcmp0(role, "assistant") != 0 &&
-        g_strcmp0(role, "system") != 0) {
-        purple_debug_warning("mistral", "Invalid role '%s' in history entry, defaulting to 'user'\n", role);
-        role = "user";
-    }
-
-    MistralHistoryEntry *entry = g_new0(MistralHistoryEntry, 1);
-    entry->role = g_strdup(role);
-    entry->content = cleaned_content;
-
-    *history = g_list_append(*history, entry);
-}
-
-static void free_history(GList *history) {
-    if (!history) {
-        return;
-    }
-    GList *item = history;
-    while (item) {
-        MistralHistoryEntry *entry = (MistralHistoryEntry *)item->data;
-        if (entry) {
-            g_free(entry->role);
-            g_free(entry->content);
-            g_free(entry);
-        }
-        item = item->next;
-    }
-    g_list_free(history);
-}
-
-static GList *get_conversation_history(PurpleConversation *conv) {
-    if (conv) {
-        GList *history = (GList *)purple_conversation_get_data(conv, "mistral_history");
-        if (history) {
-            GList *copy = NULL;
-            GList *item = history;
-            while (item) {
-                MistralHistoryEntry *orig_entry = (MistralHistoryEntry *)item->data;
-                if (orig_entry && orig_entry->role && orig_entry->content) {
-                    add_history_entry(&copy, orig_entry->role, orig_entry->content);
-                }
-                item = item->next;
-            }
-            return copy;
-        }
-    }
-    return NULL;
-}
-
-static void save_conversation_history(PurpleConversation *conv, GList *history) {
-    if (conv) {
-        GList *existing_history = (GList *)purple_conversation_get_data(conv, "mistral_history");
-        if (existing_history) {
-            free_history(existing_history);
-        }
-        purple_conversation_set_data(conv, "mistral_history", history);
-    }
-}
 
 static GList *mistral_status_types(PurpleAccount *account) {
     GList *types = NULL;
