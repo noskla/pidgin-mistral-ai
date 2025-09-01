@@ -29,7 +29,7 @@ static void mistral_login(PurpleAccount *account);
 static void mistral_close(PurpleConnection *gc);
 static int mistral_send_im(PurpleConnection *gc, const char *who, const char *message, PurpleMessageFlags flags);
 static char *send_to_mistral_api(const char *message, const char *api_key);
-static char *create_mistral_json_payload(const char *message, const char *username, const char *status, const char *status_message, GList *history);
+static char *create_mistral_json_payload(const char *message, const char *username, const char *status, const char *status_message, GList *history, const char *model, const char *system_msg_template);
 static size_t write_callback(void *contents, size_t size, size_t nmemb, void *userp);
 static GList *mistral_status_types(PurpleAccount *account);
 static const char *mistral_list_icon(PurpleAccount *account, PurpleBuddy *buddy);
@@ -103,7 +103,14 @@ static gboolean mistral_async_send(gpointer user_data) {
     const char *status_id = purple_status_get_id(active_status);
     const char *status_message = purple_status_get_attr_string(active_status, "message");
 
-    char *json_payload = create_mistral_json_payload(data->message, username, status_id, status_message, NULL);
+    const char *model = purple_account_get_string(account, "model", NULL);
+    if (!model || strlen(model) == 0) {
+        model = "mistral-small-latest";
+    }
+    const char *system_msg_template = purple_account_get_string(account, "system_message",
+        "You are talking using instant messaging service with a user named \"{username}\" that has profile status \"{status}\" with a message \"{status_message}\". Keep answers concise and to the point.");
+
+    char *json_payload = create_mistral_json_payload(data->message, username, status_id, status_message, NULL, model, system_msg_template);
 
     curl_easy_setopt(data->curl, CURLOPT_URL, "https://api.mistral.ai/v1/chat/completions");
     curl_easy_setopt(data->curl, CURLOPT_POSTFIELDS, json_payload);
@@ -250,13 +257,13 @@ static void send_to_mistral_api_async(MistralAsyncData *data) {
     g_free(data);
 }
 
-static char *create_mistral_json_payload(const char *message, const char *username, const char *status, const char *status_message, GList *history) {
+static char *create_mistral_json_payload(const char *message, const char *username, const char *status, const char *status_message, GList *history, const char *model, const char *system_msg_template) {
     JsonBuilder *builder = json_builder_new();
 
     json_builder_begin_object(builder);
 
     json_builder_set_member_name(builder, "model");
-    json_builder_add_string_value(builder, "mistral-small");
+    json_builder_add_string_value(builder, model ? model : "mistral-small");
 
     json_builder_set_member_name(builder, "messages");
     json_builder_begin_array(builder);
@@ -265,7 +272,7 @@ static char *create_mistral_json_payload(const char *message, const char *userna
     json_builder_set_member_name(builder, "role");
     json_builder_add_string_value(builder, "system");
     json_builder_set_member_name(builder, "content");
-    char *system_content = g_strdup_printf("User's Pidgin username: %s, status: %s, status message: %s",
+    char *system_content = g_strdup_printf(system_msg_template,
                                           username, status, status_message ? status_message : "");
     json_builder_add_string_value(builder, system_content);
     json_builder_end_object(builder);
@@ -455,6 +462,43 @@ static void init_plugin(PurplePlugin *plugin) {
 
     option = purple_account_option_string_new("API Key", "api_key", "");
     prpl_info.protocol_options = g_list_append(prpl_info.protocol_options, option);
+
+    // Add model selection dropdown
+    GList *model_list = NULL;
+    PurpleKeyValuePair *kv;
+
+    char *models[] = {
+        "mistral-small-latest",
+        "magistral-small-latest",
+        "devstral-small-latest",
+        "open-mistral-nemo",
+        "mistral-medium-latest",
+        "devstral-medium-latest",
+        "magistral-medium-latest",
+        "codestral-latest"
+    };
+
+    for (int i = 0; i < G_N_ELEMENTS(models); i++) {
+        PurpleKeyValuePair *kv = g_new0(PurpleKeyValuePair, 1);
+        kv->key = models[i];
+        kv->value = models[i];
+        model_list = g_list_append(model_list, kv);
+    }
+
+    PurpleAccountOption *model_option = purple_account_option_list_new(
+        "Mistral Model",
+        "model",
+        model_list);
+
+    // Add system message option
+    PurpleAccountOption *system_msg_option = purple_account_option_string_new(
+        "System Message",
+        "system_message",
+        "User's Pidgin username: {username}, status: {status}, status message: {status_message}");
+
+    // Add to protocol options
+    prpl_info.protocol_options = g_list_append(prpl_info.protocol_options, model_option);
+    prpl_info.protocol_options = g_list_append(prpl_info.protocol_options, system_msg_option);
 
     info.load = plugin_load;
     info.unload = plugin_unload;
